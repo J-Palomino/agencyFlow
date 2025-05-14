@@ -36,7 +36,6 @@ function App() {
                 </ReactFlowProvider>
               }
             />
-            <Route path="/how-to-use" element={<HowToUse />} />
           </Routes>
         </main>
       </div>
