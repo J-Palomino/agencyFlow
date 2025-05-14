@@ -299,7 +299,9 @@ const ControlPanel: React.FC = () => {
               <div className="mt-2 flex flex-wrap gap-1">
                 {formData.tools?.map((tool, index) => (
                   <div key={index} className="flex items-center bg-blue-50 text-blue-600 px-2 py-1 rounded-full text-xs">
-                    {tool}
+                    {typeof tool === 'string'
+                    ? tool
+                    : tool.name || tool.label || JSON.stringify(tool)}
                     <button
                       onClick={() => handleDeleteTool(index)}
                       className="ml-1 text-blue-400 hover:text-blue-600"

@@ -9,8 +9,8 @@ const AgentNode = memo(({ data, isConnectable }: NodeProps<NodeData>) => {
   const { agent, isSelected } = data;
   const [editConfig, setEditConfig] = useState(false);
   const [llmUrl, setLlmUrl] = useState(agent.llmUrl || '');
-  const [systemPrompt, setSystemPrompt] = useState(agent.systemPrompt || '');
-  const [userPrompt, setUserPrompt] = useState(agent.userPrompt || '');
+  const [systemPrompt, setSystemPrompt] = useState(agent.prompts?.system || '');
+  const [userPrompt, setUserPrompt] = useState(agent.prompts?.user || '');
   const [message, setMessage] = useState('');
   const [toId, setToId] = useState('');
 
@@ -23,7 +23,13 @@ const AgentNode = memo(({ data, isConnectable }: NodeProps<NodeData>) => {
   const [agentType, setAgentType] = useState<'backend' | 'remote'>(agent.llmUrl ? 'remote' : 'backend');
 
   const handleSaveConfig = () => {
-    updateNode(agent.id, { llmUrl, systemPrompt, userPrompt });
+    updateNode(agent.id, {
+      llmUrl,
+      prompts: {
+        system: systemPrompt,
+        user: userPrompt
+      }
+    });
     setEditConfig(false);
   };
 
@@ -76,17 +82,27 @@ const AgentNode = memo(({ data, isConnectable }: NodeProps<NodeData>) => {
       {/* Header with avatar and basic info */}
       <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-4 text-white">
         <div className="flex items-center space-x-3">
-          {agent.avatar ? (
-            <img 
-              src={agent.avatar} 
-              alt={agent.name} 
-              className="w-14 h-14 rounded-full object-cover border-2 border-white"
-            />
-          ) : (
-            <div className="w-14 h-14 rounded-full bg-blue-300 flex items-center justify-center text-blue-600 text-xl font-bold">
-              {agent.name.split(' ').map(name => name[0]).join('')}
-            </div>
-          )}
+          {/* Status border around avatar */}
+          <div
+            className={
+              `p-1 rounded-full border-4 ` +
+              (agent.status === 'deployed' ? 'border-green-500' :
+                agent.status === 'error' ? 'border-yellow-400' :
+                'border-red-500')
+            }
+          >
+            {agent.avatar ? (
+              <img 
+                src={agent.avatar} 
+                alt={agent.name} 
+                className="w-14 h-14 rounded-full object-cover border-2 border-white"
+              />
+            ) : (
+              <div className="w-14 h-14 rounded-full bg-blue-300 flex items-center justify-center text-blue-600 text-xl font-bold">
+                {agent.name.split(' ').map(name => name[0]).join('')}
+              </div>
+            )}
+          </div>
           <div>
             <h3 className="font-semibold text-lg">{agent.name}</h3>
             <div className="flex items-center text-blue-100 text-sm">
@@ -157,8 +173,8 @@ const AgentNode = memo(({ data, isConnectable }: NodeProps<NodeData>) => {
           ) : (
             <div className="text-xs text-gray-600">
               <div><b>URL:</b> {agent.llmUrl || <span className="text-gray-400">(none)</span>}</div>
-              <div><b>System:</b> {agent.systemPrompt || <span className="text-gray-400">(none)</span>}</div>
-              <div><b>User:</b> {agent.userPrompt || <span className="text-gray-400">(none)</span>}</div>
+              <div><b>System:</b> {agent.prompts?.system || <span className="text-gray-400">(none)</span>}</div>
+              <div><b>User:</b> {agent.prompts?.user || <span className="text-gray-400">(none)</span>}</div>
             </div>
           )}
 
@@ -183,7 +199,9 @@ const AgentNode = memo(({ data, isConnectable }: NodeProps<NodeData>) => {
                   key={index} 
                   className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full"
                 >
-                  {tool}
+                  {typeof tool === 'string'
+                    ? tool
+                    : tool.name || tool.label || JSON.stringify(tool)}
                 </span>
               ))}
             </div>

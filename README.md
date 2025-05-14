@@ -38,7 +38,7 @@ npm install
 yarn install
 ```
 
-### Running the App
+### Running the App (Locally)
 
 ```bash
 npm run dev
@@ -47,6 +47,19 @@ yarn dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
+
+### Running with Docker Compose
+
+To run both frontend and backend using Docker Compose:
+
+```bash
+docker-compose up --build
+```
+
+- Frontend: [http://localhost:5173](http://localhost:5173)
+- Backend: [http://localhost:8000](http://localhost:8000)
+
+This uses the multi-stage Dockerfile and volume setup for fast local development.
 
 ### Building for Production
 

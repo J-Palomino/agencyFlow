@@ -5,19 +5,25 @@ export type Message = {
   timestamp: number;
 };
 
+export type AgentPrompt = {
+  system?: string;
+  user?: string;
+};
+
 export type AgentData = {
+  status?: 'deployed' | 'error' | 'not_deployed';
   id: string;
   name: string;
   company: string;
   instructions: string;
-  tools: string[];
+  tools: (string | Record<string, any>)[];
   secrets: string[];
   position?: string;
   avatar?: string;
   llmUrl?: string;
-  systemPrompt?: string;
-  userPrompt?: string;
+  prompts?: AgentPrompt;
   history?: Message[];
+  subAgents?: (AgentData | string)[];
 };
 
 export type NodeData = {

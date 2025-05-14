@@ -20,11 +20,17 @@ TELEMETRY: Dict[str, list] = {}
 class AgentConfig(BaseModel):
     id: str
     name: str
+    company: Optional[str] = None
+    instructions: Optional[str] = None
     type: str  # "backend" or "remote"
     llmUrl: Optional[str] = None
     model: Optional[str] = None
     tools: Optional[list] = None
     prompts: Optional[dict] = None
+    subAgents: Optional[list] = None
+    secrets: Optional[list] = None
+    position: Optional[str] = None
+    avatar: Optional[str] = None
 
 class MessageRequest(BaseModel):
     sessionId: str
@@ -34,14 +40,50 @@ class MessageRequest(BaseModel):
     toType: str  # "backend" or "remote"
     remoteUrl: Optional[str] = None
 
+# --- AGENT REGISTRY ---
+AGENT_REGISTRY = {}
+
 # --- Endpoints ---
+
+class AdkAgentRequest(BaseModel):
+    fromId: str
+    message: str
+    sessionId: Optional[str] = None
+    context: Optional[dict] = None
+
+@app.post("/adk/agent")
+def adk_agent_endpoint(req: AdkAgentRequest):
+    # Route to actual backend agent if exists
+    agent = AGENT_REGISTRY.get(req.fromId)
+    if agent is not None:
+        reply = agent.run(req.message)
+        agent_id = req.fromId
+    else:
+        reply = f"Agent not found: {req.fromId}"
+        agent_id = "unknown"
+    response = {
+        "reply": reply,
+        "agentId": agent_id,
+        "sessionId": req.sessionId or str(uuid.uuid4()),
+        "context": req.context or {},
+    }
+    return response
 
 @app.post("/agents/")
 def create_or_update_agent(agent: AgentConfig):
     AGENTS[agent.id] = agent.dict()
     # If backend-managed, instantiate/update ADK agent here
-    # if agent.type == "backend":
-    #     AgentRegistry.register(agent.id, LlmAgent(...))
+    if agent.type == "backend":
+        from adk import LlmAgent
+        llm_agent = LlmAgent(
+            name=agent.name,
+            model=agent.model,
+            description=agent.instructions,
+            tools=agent.tools,
+            prompts=agent.prompts,
+            sub_agents=agent.subAgents
+        )
+        AGENT_REGISTRY[agent.id] = llm_agent
     return {"status": "ok", "agent": agent}
 
 @app.post("/message/")
