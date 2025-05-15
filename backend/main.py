@@ -1,10 +1,13 @@
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Union
 import uuid
 import requests
 import json
 from datetime import datetime
+
+# Import OpenRouter agent integration
+from agent_factory import create_agent
 
 # --- ADK imports (pseudo-code, replace with real ADK agent logic) ---
 # from adk import LlmAgent, AgentRegistry
@@ -43,6 +46,14 @@ class MessageRequest(BaseModel):
 # --- AGENT REGISTRY ---
 AGENT_REGISTRY = {}
 
+# Register LiteLLM agent
+try:
+    from litellm.agent import root_agent
+    AGENT_REGISTRY["openai_agent"] = root_agent
+    print("[AGENT] LiteLLM agent 'openai_agent' registered in AGENT_REGISTRY.")
+except Exception as e:
+    print(f"[ERROR] Failed to register LiteLLM agent: {e}")
+
 # --- Endpoints ---
 
 class AdkAgentRequest(BaseModel):
@@ -50,6 +61,15 @@ class AdkAgentRequest(BaseModel):
     message: str
     sessionId: Optional[str] = None
     context: Optional[dict] = None
+
+class OpenRouterAgentConfig(BaseModel):
+    id: str
+    name: str
+    model: str = "anthropic/claude-3-opus"
+    description: Optional[str] = None
+    tools: Optional[List[Union[str, Dict[str, Any]]]] = None
+    prompts: Optional[Dict[str, str]] = None
+    sub_agents: Optional[List[str]] = None
 
 @app.post("/adk/agent")
 def adk_agent_endpoint(req: AdkAgentRequest):
@@ -71,6 +91,7 @@ def adk_agent_endpoint(req: AdkAgentRequest):
 
 @app.post("/agents/")
 def create_or_update_agent(agent: AgentConfig):
+    print(f"[AGENT] Received create/update request for agent: {agent.id} ({agent.name})")
     AGENTS[agent.id] = agent.dict()
     # If backend-managed, instantiate/update ADK agent here
     if agent.type == "backend":
@@ -84,6 +105,8 @@ def create_or_update_agent(agent: AgentConfig):
             sub_agents=agent.subAgents
         )
         AGENT_REGISTRY[agent.id] = llm_agent
+        print(f"[AGENT] Backend agent instantiated and registered: {agent.id}")
+    print(f"[AGENT] Agent {agent.id} ({agent.name}) created/updated successfully.")
     return {"status": "ok", "agent": agent}
 
 @app.post("/message/")
@@ -99,10 +122,17 @@ def send_message(req: MessageRequest):
     }
     # Route to backend or remote
     if req.toType == "backend":
-        # Here you'd call your ADK agent logic and get a response
-        # response = AgentRegistry.get(req.toId).run(req.message)
-        response = f"Simulated backend agent {req.toId} response to: {req.message}"
-        log_entry["response"] = response
+        agent = AGENT_REGISTRY.get(req.toId)
+        if agent is not None:
+            try:
+                response = agent.run(req.message)
+                log_entry["response"] = response
+            except Exception as e:
+                log_entry["error"] = str(e)
+                raise HTTPException(status_code=500, detail=f"Agent error: {str(e)}")
+        else:
+            response = f"Agent not found: {req.toId}"
+            log_entry["response"] = response
     elif req.toType == "remote" and req.remoteUrl:
         try:
             http_resp = requests.post(req.remoteUrl, json={
@@ -124,6 +154,54 @@ def send_message(req: MessageRequest):
 @app.get("/telemetry/session/{session_id}")
 def get_telemetry(session_id: str):
     return TELEMETRY.get(session_id, [])
+
+@app.post("/openrouter/agents/")
+def create_openrouter_agent(agent_config: OpenRouterAgentConfig):
+    """Create a new agent using OpenRouter.
+    This is a separate endpoint that doesn't modify the existing /agents/ endpoint.
+    """
+    try:
+        # Create the OpenRouter agent
+        agent = create_agent(
+            agent_type="openrouter",
+            agent_id=agent_config.id,
+            name=agent_config.name,
+            model=agent_config.model,
+            description=agent_config.description,
+            tools=agent_config.tools,
+            prompts=agent_config.prompts,
+            sub_agents=agent_config.sub_agents
+        )
+        
+        # Register the agent in the global registry
+        AGENT_REGISTRY[agent_config.id] = agent
+        
+        # Also store in AGENTS dict for consistency
+        AGENTS[agent_config.id] = {
+            "id": agent_config.id,
+            "name": agent_config.name,
+            "type": "backend",
+            "model": agent_config.model,
+            "tools": agent_config.tools,
+            "prompts": agent_config.prompts,
+            "subAgents": agent_config.sub_agents,
+            "status": "deployed"  # Mark as deployed for UI status indicator
+        }
+        
+        return {
+            "status": "ok", 
+            "message": f"OpenRouter agent {agent_config.id} created successfully",
+            "agent": AGENTS[agent_config.id]
+        }
+    except Exception as e:
+        # Mark as error for UI status indicator
+        if agent_config.id in AGENTS:
+            AGENTS[agent_config.id]["status"] = "error"
+        
+        return {
+            "status": "error",
+            "message": f"Failed to create OpenRouter agent: {str(e)}"
+        }
 
 # --- CORS for local dev ---
 from fastapi.middleware.cors import CORSMiddleware
