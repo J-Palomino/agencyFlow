@@ -44,3 +44,93 @@ Welcome to the Organization Chart Tool! This guide will help you quickly get sta
 ---
 
 For more help, see the README or contact your system administrator.
+
+
+"""
+Composio + OpenAI Agent Integration
+Reusable function for tool-augmented LLM calls via OpenRouter/OpenAI and Composio.
+Place your .env with OPENROUTER_API_KEY and COMPOSIO_API_KEY in the same directory or project root.
+"""
+import sys
+import traceback
+from dotenv import load_dotenv
+from composio_openai import ComposioToolSet, Action
+from openai import OpenAI
+from os import getenv
+
+# === 1. Load Environment Variables ===
+load_dotenv()
+OPENROUTER_API_KEY = getenv("OPENROUTER_API_KEY")
+COMPOSIO_API_KEY = getenv("COMPOSIO_API_KEY")
+BASE_URL = getenv("BASE_URL", "https://openrouter.ai/api/v1")
+HTTP_REFERER = getenv("HTTP_REFERER")
+X_TITLE = getenv("X_TITLE")
+
+if not OPENROUTER_API_KEY:
+    raise RuntimeError("[ENV] OPENROUTER_API_KEY not set in environment!")
+
+# === 2. Initialize OpenAI Client ===
+client = OpenAI(
+    base_url=BASE_URL,
+    api_key=OPENROUTER_API_KEY,
+)
+
+def run_composio_openai_agent(user_message, actions, model="openai/gpt-4o-mini"):
+    """
+    Run a tool-augmented LLM call using OpenAI (OpenRouter) and Composio tools.
+    Args:
+        user_message (str): The user's prompt for the LLM.
+        actions (list): List of composio_openai.Action enums to enable as tools.
+        model (str): OpenAI model string (default: "openai/gpt-4o-mini").
+    Returns:
+        dict: Tool call results or LLM response.
+    """
+    # === 3. Initialize Composio ToolSet ===
+    try:
+        toolset = ComposioToolSet(api_key=COMPOSIO_API_KEY)
+    except Exception:
+        print("[INIT] Failed to initialize ComposioToolSet:")
+        traceback.print_exc()
+        return None
+
+    # === 4. Retrieve OpenAI-Compatible Tools ===
+    try:
+        tools = toolset.get_tools(actions=actions)
+    except Exception:
+        print("[TOOLS] Failed to get Composio tools:")
+        traceback.print_exc()
+        return None
+
+    # === 5. Make a Chat Completion Call ===
+    try:
+        messages = [
+            {"role": "user", "content": user_message}
+        ]
+        extra_headers = {}
+        if HTTP_REFERER:
+            extra_headers["HTTP-Referer"] = HTTP_REFERER
+        if X_TITLE:
+            extra_headers["X-Title"] = X_TITLE
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            tools=tools,
+            extra_headers=extra_headers if extra_headers else None,
+        )
+    except Exception:
+        print("[OPENAI] OpenAI chat completion failed:")
+        traceback.print_exc()
+        return None
+
+    # === 6. Handle Tool Calls ===
+    try:
+        tool_call_results = toolset.handle_tool_calls(response)
+        return tool_call_results
+    except Exception:
+        print("[TOOLS] Failed to handle tool calls:")
+        traceback.print_exc()
+        return None
+
+
+integration_id = "ac_hDQiXrGMY0O0"
+integration = toolset.get_integration(id=integration_id)

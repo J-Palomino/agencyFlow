@@ -1,8 +1,9 @@
 import React from 'react';
 import { Edge } from 'reactflow';
 import useOrgChartStore from '../store/useOrgChartStore';
-import { Plus, Trash2, Edit3, Save, X, Link2 } from 'lucide-react';
+import { Plus, Trash2, Edit3, Save, X, Link2, Cloud } from 'lucide-react';
 import { AgentData } from '../types';
+import { createOpenRouterAgent } from '../agentApi';
 
 const ControlPanel: React.FC = () => {
   const {
@@ -31,8 +32,18 @@ const ControlPanel: React.FC = () => {
     position: '',
     instructions: '',
     tools: [],
-    secrets: []
+    secrets: [],
+    prompts: {
+      system: '',
+      user: ''
+    }
   });
+  
+  // OpenRouter specific state
+  const [useOpenRouter, setUseOpenRouter] = React.useState(false);
+  const [openRouterModel, setOpenRouterModel] = React.useState('anthropic/claude-3-opus');
+  const [systemPrompt, setSystemPrompt] = React.useState('');
+  const [userPrompt, setUserPrompt] = React.useState('');
   
   const [toolInput, setToolInput] = React.useState('');
   const [secretInput, setSecretInput] = React.useState('');
@@ -51,6 +62,8 @@ const ControlPanel: React.FC = () => {
   React.useEffect(() => {
     if (selectedNode && isEditing) {
       setFormData({ ...selectedNode.data.agent });
+      setSystemPrompt(selectedNode.data.agent.prompts?.system || '');
+      setUserPrompt(selectedNode.data.agent.prompts?.user || '');
     } else if (!isEditing) {
       setFormData({
         id: crypto.randomUUID(),
@@ -59,14 +72,72 @@ const ControlPanel: React.FC = () => {
         position: '',
         instructions: '',
         tools: [],
-        secrets: []
+        secrets: [],
+        prompts: {
+          system: '',
+          user: ''
+        }
       });
+      setSystemPrompt('');
+      setUserPrompt('');
+      setUseOpenRouter(false);
     }
   }, [selectedNode, isEditing]);
   
-  const handleAddAgent = () => {
+  const handleAddAgent = async () => {
     if (formData.name && formData.company && formData.instructions) {
-      addNode(formData as AgentData);
+      // Update prompts from the form inputs
+      const updatedFormData = {
+        ...formData,
+        prompts: {
+          system: systemPrompt,
+          user: userPrompt
+        }
+      };
+      
+      if (useOpenRouter) {
+        try {
+          // Create an OpenRouter agent via the backend
+          const response = await createOpenRouterAgent({
+            id: updatedFormData.id,
+            name: updatedFormData.name,
+            model: openRouterModel,
+            description: updatedFormData.instructions,
+            tools: updatedFormData.tools,
+            prompts: updatedFormData.prompts,
+            sub_agents: updatedFormData.subAgents || []
+          });
+          
+          if (response.status === 'ok') {
+            // Add the agent to the UI with deployed status
+            addNode({
+              ...updatedFormData,
+              status: 'deployed'
+            } as AgentData);
+          } else {
+            // Add the agent to the UI with error status
+            addNode({
+              ...updatedFormData,
+              status: 'error'
+            } as AgentData);
+            console.error('Failed to create OpenRouter agent:', response.message);
+          }
+        } catch (error) {
+          console.error('Error creating OpenRouter agent:', error);
+          // Still add to UI but with error status
+          addNode({
+            ...updatedFormData,
+            status: 'error'
+          } as AgentData);
+        }
+      } else {
+        // Regular agent (not deployed)
+        addNode({
+          ...updatedFormData,
+          status: 'not_deployed'
+        } as AgentData);
+      }
+      
       setShowNodeForm(false);
       setFormData({
         id: crypto.randomUUID(),
@@ -75,14 +146,30 @@ const ControlPanel: React.FC = () => {
         position: '',
         instructions: '',
         tools: [],
-        secrets: []
+        secrets: [],
+        prompts: {
+          system: '',
+          user: ''
+        }
       });
+      setSystemPrompt('');
+      setUserPrompt('');
+      setUseOpenRouter(false);
     }
   };
   
   const handleUpdateAgent = () => {
     if (selectedNode && formData.name && formData.company && formData.instructions) {
-      updateNode(selectedNode.id, formData);
+      // Update prompts from the form inputs
+      const updatedFormData = {
+        ...formData,
+        prompts: {
+          system: systemPrompt,
+          user: userPrompt
+        }
+      };
+      
+      updateNode(selectedNode.id, updatedFormData);
       setIsEditing(false);
     }
   };
@@ -274,6 +361,73 @@ const ControlPanel: React.FC = () => {
                 placeholder="Agent instructions"
                 rows={3}
               />
+            </div>
+            
+            {/* OpenRouter Integration */}
+            <div className="mt-4 border-t pt-4">
+              <div className="flex items-center mb-2">
+                <input
+                  type="checkbox"
+                  id="useOpenRouter"
+                  checked={useOpenRouter}
+                  onChange={(e) => setUseOpenRouter(e.target.checked)}
+                  className="mr-2"
+                />
+                <label htmlFor="useOpenRouter" className="flex items-center text-sm font-medium text-gray-700">
+                  <Cloud size={16} className="mr-1 text-blue-500" />
+                  Deploy with OpenRouter
+                </label>
+              </div>
+              
+              {useOpenRouter && (
+                <div className="pl-6 border-l-2 border-blue-100 space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Model
+                    </label>
+                    <select
+                      value={openRouterModel}
+                      onChange={(e) => setOpenRouterModel(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="anthropic/claude-3-opus">Claude 3 Opus</option>
+                      <option value="anthropic/claude-3-sonnet">Claude 3 Sonnet</option>
+                      <option value="anthropic/claude-3-haiku">Claude 3 Haiku</option>
+                      <option value="openai/gpt-4-turbo">GPT-4 Turbo</option>
+                      <option value="openai/gpt-4o">GPT-4o</option>
+                      <option value="openai/gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                      <option value="mistral/mistral-large">Mistral Large</option>
+                      <option value="mistral/mistral-medium">Mistral Medium</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      System Prompt
+                    </label>
+                    <textarea
+                      value={systemPrompt}
+                      onChange={(e) => setSystemPrompt(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="System prompt for the agent"
+                      rows={2}
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      User Prompt Prefix
+                    </label>
+                    <textarea
+                      value={userPrompt}
+                      onChange={(e) => setUserPrompt(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Optional prefix for user messages"
+                      rows={2}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
             
             <div>

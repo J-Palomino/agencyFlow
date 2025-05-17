@@ -35,3 +35,25 @@ export async function fetchTelemetry(sessionId: string) {
   if (!resp.ok) throw new Error("Failed to fetch telemetry");
   return resp.json();
 }
+
+// Create an agent using the regular agent endpoint
+export async function createAgent(agentData: any) {
+  const resp = await fetch("http://localhost:8000/agents/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(agentData)
+  });
+  if (!resp.ok) throw new Error("Failed to create agent");
+  return resp.json();
+}
+
+// Create an agent using OpenRouter
+export async function createOpenRouterAgent(agentData: any) {
+  const resp = await fetch("http://localhost:8000/openrouter/agents/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(agentData)
+  });
+  if (!resp.ok) throw new Error("Failed to create OpenRouter agent");
+  return resp.json();
+}

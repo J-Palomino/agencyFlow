@@ -3,7 +3,7 @@ import { Handle, Position, NodeProps } from 'reactflow';
 import { User, Briefcase, Info, PenTool as Tool, Lock, Send } from 'lucide-react';
 import { NodeData } from '../types';
 import useOrgChartStore from '../store/useOrgChartStore';
-import { sendAgentMessage } from '../agentApi';
+import { sendAgentMessage, createAgent } from '../agentApi';
 
 const AgentNode = memo(({ data, isConnectable }: NodeProps<NodeData>) => {
   const { agent, isSelected } = data;
@@ -22,15 +22,22 @@ const AgentNode = memo(({ data, isConnectable }: NodeProps<NodeData>) => {
   // New: agent type selection (backend or remote)
   const [agentType, setAgentType] = useState<'backend' | 'remote'>(agent.llmUrl ? 'remote' : 'backend');
 
-  const handleSaveConfig = () => {
-    updateNode(agent.id, {
+  const handleSaveConfig = async () => {
+    const updatedAgent = {
+      ...agent,
       llmUrl,
       prompts: {
         system: systemPrompt,
         user: userPrompt
       }
-    });
-    setEditConfig(false);
+    };
+    try {
+      await createAgent(updatedAgent); // Persist to backend
+      updateNode(agent.id, updatedAgent); // Update local state
+      setEditConfig(false);
+    } catch (err) {
+      alert('Failed to save agent config: ' + (err as Error).message);
+    }
   };
 
   // New: Send message via backend API, using ADK or A2A if collaboration

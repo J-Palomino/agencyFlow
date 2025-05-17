@@ -22,3 +22,4 @@ services:
       - ./backend:/app
     environment:
       - PYTHONUNBUFFERED=1
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}

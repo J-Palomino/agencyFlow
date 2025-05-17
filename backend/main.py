@@ -1,13 +1,16 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List, Union
 import uuid
 import requests
-import json
+from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
+from composio_openai import ComposioToolSet, Action # Or framework-specific ToolSet
+from dotenv import load_dotenv
+from os import getenv
 
-# Import OpenRouter agent integration
-from agent_factory import create_agent
+load_dotenv()
+COMPOSIO_API_KEY = getenv("COMPOSIO_API_KEY")
 
 # --- ADK imports (pseudo-code, replace with real ADK agent logic) ---
 # from adk import LlmAgent, AgentRegistry
@@ -155,56 +158,23 @@ def send_message(req: MessageRequest):
 def get_telemetry(session_id: str):
     return TELEMETRY.get(session_id, [])
 
-@app.post("/openrouter/agents/")
-def create_openrouter_agent(agent_config: OpenRouterAgentConfig):
-    """Create a new agent using OpenRouter.
-    This is a separate endpoint that doesn't modify the existing /agents/ endpoint.
-    """
-    try:
-        # Create the OpenRouter agent
-        agent = create_agent(
-            agent_type="openrouter",
-            agent_id=agent_config.id,
-            name=agent_config.name,
-            model=agent_config.model,
-            description=agent_config.description,
-            tools=agent_config.tools,
-            prompts=agent_config.prompts,
-            sub_agents=agent_config.sub_agents
-        )
-        
-        # Register the agent in the global registry
-        AGENT_REGISTRY[agent_config.id] = agent
-        
-        # Also store in AGENTS dict for consistency
-        AGENTS[agent_config.id] = {
-            "id": agent_config.id,
-            "name": agent_config.name,
-            "type": "backend",
-            "model": agent_config.model,
-            "tools": agent_config.tools,
-            "prompts": agent_config.prompts,
-            "subAgents": agent_config.sub_agents,
-            "status": "deployed"  # Mark as deployed for UI status indicator
-        }
-        
-        return {
-            "status": "ok", 
-            "message": f"OpenRouter agent {agent_config.id} created successfully",
-            "agent": AGENTS[agent_config.id]
-        }
-    except Exception as e:
-        # Mark as error for UI status indicator
-        if agent_config.id in AGENTS:
-            AGENTS[agent_config.id]["status"] = "error"
-        
-        return {
-            "status": "error",
-            "message": f"Failed to create OpenRouter agent: {str(e)}"
-        }
+
+# composio auth
+@app.post("/composio/auth")
+def composio_auth(app_name: str, entity_id: str):
+    toolset = ComposioToolSet()
+    entity = toolset.get_entity(id=entity_id) # Get Entity object
+    print(f"Initiating {app_name} connection for entity: {entity.id}")
+    # Initiate connection using the app's Integration and the user's Entity ID
+    connection_request = entity.initiate_connection(app_name=app_name)
+    # Composio returns a redirect URL for OAuth flows
+    tools = toolset.get_tools(apps=['GMAIL'])
+    if connection_request.redirectUrl:
+        print(f"Please direct the user to visit: {connection_request.redirectUrl}")
+    return {"redirectUrl": connection_request.redirectUrl, "tools": tools}
 
 # --- CORS for local dev ---
-from fastapi.middleware.cors import CORSMiddleware
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
