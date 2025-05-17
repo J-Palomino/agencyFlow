@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pydantic
+requests
+google-adk
+openai
+python-dotenv
+litellm
+composio-openai
+# Testing dependencies
+pytest
+httpx
+pytest-cov
+pytest-mock

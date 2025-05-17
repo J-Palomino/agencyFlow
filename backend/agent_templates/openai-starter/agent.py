@@ -63,4 +63,5 @@ root_agent = LlmAgent(
     description=(
         "Agent to answer questions about the time and weather in a city."
     ),
+    tools=[get_weather, get_current_time],
 )

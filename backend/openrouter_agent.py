@@ -3,7 +3,7 @@ import requests
 import datetime
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, List
 
 # Load environment variables
 load_dotenv()

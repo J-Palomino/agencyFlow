@@ -23,3 +23,15 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+  openai_starter_agent:
+    build:
+      context: ./backend/agent_templates/openai-starter
+      dockerfile: Dockerfile
+    ports:
+      - "8999:8000"
+    volumes:
+      - ./backend/agent_templates/openai-starter:/app
+    env_file:
+      - ./backend/agent_templates/openai-starter/.env
+    environment:
+      - PYTHONUNBUFFERED=1

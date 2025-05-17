@@ -49,7 +49,7 @@ us-west3
 us-west4
 
 # Set the path to your agent code directory
-export AGENT_PATH="./backend/googleADKAgent" # Google Sample SDK
+ # Google Sample SDK
  
 
 # Set a name for your Cloud Run service (optional)

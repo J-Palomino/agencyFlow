@@ -1,13 +1,16 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Union
 import uuid
-import requests
+import httpx
+import requests  # Added for HTTP requests
+
+from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
-from composio_openai import ComposioToolSet, Action # Or framework-specific ToolSet
-from dotenv import load_dotenv
-from os import getenv
+from pydantic import BaseModel
+from dotenv import load_dotenv, getenv
+
+# Import auth module
+from auth import get_current_user, create_access_token, get_google_auth_url
 
 load_dotenv()
 COMPOSIO_API_KEY = getenv("COMPOSIO_API_KEY")
@@ -93,7 +96,10 @@ def adk_agent_endpoint(req: AdkAgentRequest):
     return response
 
 @app.post("/agents/")
-def create_or_update_agent(agent: AgentConfig):
+async def create_or_update_agent(
+    agent: AgentConfig,
+    current_user: dict = Depends(get_current_user)
+):
     print(f"[AGENT] Received create/update request for agent: {agent.id} ({agent.name})")
     AGENTS[agent.id] = agent.dict()
     # If backend-managed, instantiate/update ADK agent here
@@ -112,8 +118,11 @@ def create_or_update_agent(agent: AgentConfig):
     print(f"[AGENT] Agent {agent.id} ({agent.name}) created/updated successfully.")
     return {"status": "ok", "agent": agent}
 
-@app.post("/message/")
-def send_message(req: MessageRequest):
+@app.post("/agents/{agent_id}/message")
+async def send_message(
+    req: MessageRequest,
+    current_user: dict = Depends(get_current_user)
+):
     # Telemetry log
     log_entry = {
         "timestamp": datetime.utcnow().isoformat(),
@@ -154,30 +163,91 @@ def send_message(req: MessageRequest):
     TELEMETRY.setdefault(req.sessionId, []).append(log_entry)
     return {"status": "ok", "log": log_entry}
 
-@app.get("/telemetry/session/{session_id}")
-def get_telemetry(session_id: str):
+@app.get("/telemetry/{session_id}")
+async def get_telemetry(
+    session_id: str,
+    current_user: dict = Depends(get_current_user)
+):
     return TELEMETRY.get(session_id, [])
 
+# --- OAuth2 Routes ---
+
+@app.get("/auth/google/login")
+async def login_via_google():
+    """Generate Google OAuth URL and redirect to it"""
+    return {"url": get_google_auth_url()}
+
+@app.get("/auth/google/callback")
+async def auth_callback(code: str):
+    """Handle Google OAuth callback and return JWT token"""
+    token_url = "https://oauth2.googleapis.com/token"
+    data = {
+        'code': code,
+        'client_id': getenv("GOOGLE_CLIENT_ID"),
+        'client_secret': getenv("GOOGLE_CLIENT_SECRET"),
+        'redirect_uri': getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback"),
+        'grant_type': 'authorization_code',
+    }
+    
+    async with httpx.AsyncClient() as client:
+        token_response = await client.post(token_url, data=data)
+        token_data = token_response.json()
+        
+        if 'error' in token_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=token_data['error_description']
+            )
+            
+        # Get user info
+        userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo"
+        headers = {"Authorization": f"Bearer {token_data['access_token']}"}
+        userinfo_response = await client.get(userinfo_url, headers=headers)
+        user_data = userinfo_response.json()
+        
+        # Create JWT token
+        access_token_expires = timedelta(minutes=30)
+        access_token = create_access_token(
+            data={"sub": user_data["email"]},  # Using email as the subject
+            expires_delta=access_token_expires
+        )
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "email": user_data["email"],
+                "name": user_data.get("name", ""),
+                "picture": user_data.get("picture", "")
+            }
+        }
+
+# Protected route example
+@app.get("/api/me")
+async def read_users_me(current_user: dict = Depends(get_current_user)):
+    return {"email": current_user.email}
 
 # composio auth
 @app.post("/composio/auth")
 def composio_auth(app_name: str, entity_id: str):
-    toolset = ComposioToolSet()
-    entity = toolset.get_entity(id=entity_id) # Get Entity object
-    print(f"Initiating {app_name} connection for entity: {entity.id}")
-    # Initiate connection using the app's Integration and the user's Entity ID
-    connection_request = entity.initiate_connection(app_name=app_name)
-    # Composio returns a redirect URL for OAuth flows
-    tools = toolset.get_tools(apps=['GMAIL'])
-    if connection_request.redirectUrl:
-        print(f"Please direct the user to visit: {connection_request.redirectUrl}")
-    return {"redirectUrl": connection_request.redirectUrl, "tools": tools}
+    """
+    Authenticate with Composio API
+    """
+    url = "https://api.composio.dev/auth"
+    headers = {
+        "x-api-key": COMPOSIO_API_KEY,
+        "Content-Type": "application/json"
+    }
+    data = {"appName": app_name, "entityId": entity_id}
+    response = requests.post(url, headers=headers, json=data)
+    return response.json()
+
 
 # --- CORS for local dev ---
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173"],  # Update with your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

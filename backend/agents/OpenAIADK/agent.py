@@ -1,66 +1,31 @@
-
-import datetime
-from zoneinfo import ZoneInfo
 from google.adk.agents import LlmAgent
 from google.adk.models.lite_llm import LiteLlm
+from composio_openai import ComposioToolSet, App
 
-def get_weather(city: str) -> dict:
-    """Retrieves the current weather report for a specified city.
 
+
+composio_toolset = ComposioToolSet(entity_id="juan")
+
+tools = composio_toolset.get_tools(apps=[App.GMAIL])
+
+def composio_wrapper(response: str) -> dict:
+    """Use the tools from the MCP server to execute the response from the LLM.
+ fetch_emails from google
     Args:
-        city (str): The name of the city for which to retrieve the weather report.
+        response (str): The response from the LLM.
 
     Returns:
         dict: status and result or error msg.
     """
-    if city.lower() == "new york":
-        return {
-            "status": "success",
-            "report": (
-                "The weather in New York is sunny with a temperature of 25 degrees"
-                " Celsius (77 degrees Fahrenheit)."
-            ),
-        }
-    else:
-        return {
-            "status": "error",
-            "error_message": f"Weather information for '{city}' is not available.",
-        }
-
-
-def get_current_time(city: str) -> dict:
-    """Returns the current time in a specified city.
-
-    Args:
-        city (str): The name of the city for which to retrieve the current time.
-
-    Returns:
-        dict: status and result or error msg.
-    """
-
-    if city.lower() == "new york":
-        tz_identifier = "America/New_York"
-    else:
-        return {
-            "status": "error",
-            "error_message": (
-                f"Sorry, I don't have timezone information for {city}."
-            ),
-        }
-
-    tz = ZoneInfo(tz_identifier)
-    now = datetime.datetime.now(tz)
-    report = (
-        f'The current time in {city} is {now.strftime("%Y-%m-%d %H:%M:%S %Z%z")}'
-    )
-    return {"status": "success", "report": report}
-
+    result = composio_toolset.handle_tool_calls(response=response)
+    return result
 
 root_agent = LlmAgent(
     model=LiteLlm(model="openai/gpt-4o"), # LiteLLM model string format
     name="openai_agent",
-    instruction="You are a helpful assistant powered by GPT-4o.",
+    instruction="You are a helpful assistant using GMAIL calls to help the user",
     description=(
         "Agent to answer questions about the time and weather in a city."
     ),
+    tools=[composio_wrapper],
 )
